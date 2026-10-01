@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시 뽑기</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    /* 메시 그라데이션: 여러 색 원을 겹쳐 수채화처럼 번지게 */
+    background:
+      radial-gradient(at 12% 18%, #c9d8ff 0, transparent 55%),
+      radial-gradient(at 88% 12%, #e6d4ff 0, transparent 50%),
+      radial-gradient(at 80% 88%, #ffd9c7 0, transparent 55%),
+      radial-gradient(at 15% 90%, #d2f1ec 0, transparent 50%),
+      #f7f5fb;
+    font-family: "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", sans-serif;
+    color: #1d1f24;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* 그레인(필름 입자) 질감: 인터넷 없이 SVG 노이즈로 생성 */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    opacity: .22; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .board { position: relative; height: 100%; }
+  .surface {
+    height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 6vh 6vw;
+    position: relative; overflow: hidden;
+  }
+  .result { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .result.show { animation: fade .5s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .result.rolling .title, .result.rolling .author { color: #b4b8bf; }
+  .result.rolling .rule { background: #d5d8dd; }
+  /* 쾅: 크게 떨어지며 박힘 */
+  .result.slam { animation: slam .3s cubic-bezier(.2,.8,.3,1.2); }
+  .result.slam .title, .result.slam .author { color: #7a7f88; }
+  .result.slam .rule { background: #c4c8ce; }
+  @keyframes slam { from { opacity: 0; transform: scale(1.9); } to { opacity: 1; transform: scale(1); } }
+  .board.shake { animation: shake .25s; }
+  @keyframes shake { 25% { transform: translate(-6px, 3px); } 50% { transform: translate(5px, -3px); } 75% { transform: translate(-3px, 2px); } }
+  /* 팡: 튀어나오며 원형 파동 */
+  .result.final { animation: pop .6s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { opacity: 0; transform: scale(.3); } 60% { opacity: 1; transform: scale(1.12); } to { transform: scale(1); } }
+  .burst {
+    position: absolute; left: 50%; top: 45%; width: 20vw; height: 20vw; margin: -10vw 0 0 -10vw;
+    border: 8px solid #2f5bd3; border-radius: 50%; pointer-events: none;
+    animation: burst .8s ease-out forwards;
+  }
+  @keyframes burst { from { opacity: .7; transform: scale(.2); } to { opacity: 0; transform: scale(3.5); } }
+  .title { font-size: 7vw; font-weight: 800; letter-spacing: -0.03em; line-height: 1.25; word-break: keep-all; }
+  .title.long { font-size: 4.4vw; }
+  .rule { width: 6vw; height: 4px; border-radius: 2px; background: #2f5bd3; margin: 4vh 0 3vh; }
+  .author { font-size: 3.6vw; font-weight: 600; color: #4a4f59; letter-spacing: 0.08em; }
+  .draw {
+    font: inherit; font-size: 2vw; font-weight: 700; letter-spacing: 0.1em;
+    color: #fff; background: #1d1f24; border: 0; border-radius: 999px;
+    padding: 1.6vh 4.5vw; cursor: pointer; transition: transform .1s, background .2s;
+  }
+  .draw:hover { background: #33363e; }
+  .draw:active { transform: scale(.97); }
+  .draw:disabled { background: #cfd1d5; cursor: default; }
+  /* 처음부터: 오른쪽 아래 구석에 작고 흐리게 */
+  .reset {
+    position: absolute; right: 24px; bottom: 18px;
+    font: inherit; font-size: 13px; color: #a3a6ac;
+    background: none; border: 0; cursor: pointer;
+  }
+  .reset:hover { color: #555; }
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="surface">
+    <div class="result" id="result"></div>
+    <button class="draw" id="drawBtn">뽑기</button>
+  </div>
+  <button class="reset" id="resetBtn">초기화</button>
+</div>
+
+<script>
+  // PDF에 실린 시 10편 (제목, 시인)
+  const POEMS = [
+    ["바라건대는 우리에게 우리의 보습 대일 땅이 있었다면", "김소월"],
+    ["풀", "김수영"],
+    ["꽃", "이육사"],
+    ["팔원(八院)", "백석"],
+    ["그날이 오면", "심훈"],
+    ["님의 침묵", "한용운"],
+    ["서시", "윤동주"],
+    ["초토의 시 8", "구상"],
+    ["누가 하늘을 보았다 하는가", "신동엽"],
+    ["가난한 사랑노래", "신경림"]
+  ];
+
+  let remaining = [];   // 아직 안 뽑힌 시 (화면에는 표시하지 않음)
+  const $ = id => document.getElementById(id);
+
+  function reset() {
+    if (rolling) return;
+    remaining = POEMS.slice();
+    $("result").innerHTML = "";
+    $("drawBtn").disabled = false;
+  }
+
+  // ── 효과음 (브라우저가 직접 소리 생성, 인터넷 불필요) ──
+  let ctx = null;
+  function beep(freq, dur, vol, type, endFreq) {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(t); o.stop(t + dur);
+  }
+  const tick = () => beep(1400, 0.04, 0.15, "square");
+  const thud = () => beep(160, 0.35, 0.8, "sine", 45);   // 쾅 (낮게 떨어지는 소리)
+  const ding = () => { beep(880, 1.2, 0.3, "sine"); setTimeout(() => beep(1320, 1.2, 0.25, "sine"), 120); };
+
+  // mode: "rolling"(슬롯) / "slam"(쾅) / "final"(팡)
+  function show(poem, mode) {
+    const [title, author] = poem;
+    const box = $("result");
+    box.className = "result";
+    void box.offsetWidth;            // 애니메이션을 매번 다시 시작하기 위한 한 줄
+    box.classList.add(mode);
+    box.innerHTML =
+      '<div class="title' + (title.length > 12 ? ' long' : '') + '">' + title + '</div>' +
+      '<div class="rule"></div>' +
+      '<div class="author">' + author + '</div>';
+  }
+
+  let rolling = false;
+  function draw() {
+    if (remaining.length === 0 || rolling) return;
+    // 결과는 먼저 확정: 남은 시 중 하나를 골라 후보에서 제거 → 중복 불가
+    const i = Math.floor(Math.random() * remaining.length);
+    const pick = remaining.splice(i, 1)[0];
+
+    rolling = true;
+    $("drawBtn").disabled = true;
+
+    // 1) 슬롯: 10편 전체에서 무작위, 점점 느려짐 (약 2초)
+    const ROLL = 18;
+    let prev = -1;
+    function randomOther(exclude) {   // 직전 시·exclude와 다른 시 하나
+      let k;
+      do { k = Math.floor(Math.random() * POEMS.length); }
+      while (k === prev || exclude.includes(POEMS[k]));
+      prev = k;
+      return POEMS[k];
+    }
+    // 2) 쾅쾅쾅: 결과가 아닌 서로 다른 3편
+    const decoys = [];
+    function slam(n) {
+      if (n === 3) {   // 3) 팡: 최종 결과
+        show(pick, "final"); ding();
+        const b = document.createElement("div");
+        b.className = "burst";
+        document.querySelector(".surface").appendChild(b);
+        setTimeout(() => b.remove(), 900);
+        rolling = false;
+        if (remaining.length > 0) $("drawBtn").disabled = false;
+        return;
+      }
+      const poem = randomOther([pick, ...decoys]);
+      decoys.push(poem);
+      show(poem, "slam"); thud();
+      const board = document.querySelector(".board");
+      board.classList.remove("shake"); void board.offsetWidth; board.classList.add("shake");
+      setTimeout(() => slam(n + 1), 700);
+    }
+    let step = 0;
+    function roll() {
+      if (step === ROLL) { setTimeout(() => slam(0), 250); return; }
+      show(randomOther([]), "rolling"); tick();
+      const p = step / ROLL;
+      step++;
+      setTimeout(roll, 40 + 220 * p * p);   // 0.04초 → 약 0.26초로 점점 느리게
+    }
+    roll();
+  }
+
+  $("drawBtn").addEventListener("click", draw);
+  $("resetBtn").addEventListener("click", reset);
+  reset();
+</script>
+</body>
+</html>
